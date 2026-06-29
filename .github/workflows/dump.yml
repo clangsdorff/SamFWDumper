@@ -30,7 +30,7 @@ on:
       upload_destination:
         description: 'Upload destination'
         required: true
-        default: 'gofile'
+        default: 'github releases'
         type: choice
         options:
         - 'gofile'
