@@ -83,8 +83,8 @@ on:
         description: 'build.prop (Device properties)'
         type: boolean
         default: false
-      extract_framework_rro:
-        description: 'framework-res RRO APK (from product/overlay)'
+      extract_framework:
+        description: 'framework'
         type: boolean
         default: false
       extract_pit:
@@ -137,7 +137,7 @@ jobs:
             "${{ github.event.inputs.extract_config }}" \
             "${{ github.event.inputs.extract_super_config }}" \
             "${{ github.event.inputs.extract_build_prop }}" \
-            "${{ github.event.inputs.extract_framework_rro }}" \
+            "${{ github.event.inputs.extract_framework }}" \
             "${{ github.event.inputs.extract_pit }}" \
             "${{ github.event.inputs.extract_wallpaper_res }}"
 
