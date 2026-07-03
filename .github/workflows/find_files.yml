@@ -1,0 +1,163 @@
+# =============================================================================
+# SamFWDumper - Automated Samsung Firmware Extraction
+# Copyright (C) 2026 Xiatsuma
+# Licensed under PolyForm Noncommercial License 1.0.0
+# https://polyformproject.org/licenses/noncommercial/1.0.0
+#
+# You may NOT use this file except in compliance with the License.
+# Commercial use, removal of this header, or distribution without attribution
+# is strictly prohibited. For permissions: https://github.com/Xiatsuma
+# =============================================================================
+
+name: File Finder
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'SamFW Direct Download Link'
+        required: true
+      find_pattern:
+        description: 'Aranacak dosya adı/pattern (birden fazlaysa boşlukla ayırın, örn: *.apk libfoo.so)'
+        required: true
+      compression:
+        description: 'Compression level'
+        required: true
+        default: '0'
+        type: choice
+        options:
+        - '0'
+        - '3'
+        - '6'
+        - '9'
+      upload_destination:
+        description: 'Upload destination'
+        required: true
+        default: 'github releases'
+        type: choice
+        options:
+        - 'gofile'
+        - 'github releases'
+
+jobs:
+  find:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            jq \
+            xz-utils \
+            lz4 \
+            unzip \
+            curl \
+            binutils \
+            android-sdk-libsparse-utils \
+            e2fsprogs
+
+      - name: Make tools executable
+        run: chmod +x tools/android-tools/* tools/erofs-utils/* upload_gofile.sh scripts/find_files.sh
+
+      - name: Run File Finder Script
+        run: |
+          bash scripts/find_files.sh \
+            "${{ github.event.inputs.url }}" \
+            "${{ github.event.inputs.compression }}" \
+            "${{ github.event.inputs.find_pattern }}"
+
+      - name: Get Firmware Info
+        id: fwinfo
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          AP_CODE=$(cat ap_code.txt 2>/dev/null || echo "Unknown")
+          CSC_CODE=$(cat csc_code.txt 2>/dev/null || echo "Unknown")
+          BASE_TAG=$(date +"%d%m%Y_%H,%M,%S")
+          RELEASE_TAG="$BASE_TAG"
+          if gh release view "$RELEASE_TAG" &>/dev/null 2>&1; then
+            SUFFIX=1
+            while gh release view "${BASE_TAG}_${SUFFIX}" &>/dev/null 2>&1; do
+              SUFFIX=$((SUFFIX + 1))
+            done
+            RELEASE_TAG="${BASE_TAG}_${SUFFIX}"
+          fi
+          echo "ap_code=$AP_CODE" >> $GITHUB_OUTPUT
+          echo "csc_code=$CSC_CODE" >> $GITHUB_OUTPUT
+          echo "release_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Upload to GoFile
+        if: ${{ github.event.inputs.upload_destination == 'gofile' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ ! -d "output" ] || [ -z "$(ls -A output)" ]; then
+            echo "❌ No files to upload"
+            exit 1
+          fi
+
+          NOTES_FILE=$(mktemp)
+          LINKS_FILE="links.txt"
+          > "$LINKS_FILE"
+
+          for FILE in output/*; do
+            [ -f "$FILE" ] || continue
+            BASENAME=$(basename "$FILE")
+            if bash upload_gofile.sh "$FILE"; then
+              GOFILE_URL=$(cat download_url.txt)
+              echo "${BASENAME}: ${GOFILE_URL}" >> "$NOTES_FILE"
+              echo "${GOFILE_URL}" >> "$LINKS_FILE"
+            else
+              echo "${BASENAME}: ❌ GoFile upload failed" >> "$NOTES_FILE"
+            fi
+          done
+
+          gh release create "${{ steps.fwinfo.outputs.release_tag }}" \
+            --title "${{ steps.fwinfo.outputs.ap_code }} | ${{ steps.fwinfo.outputs.csc_code }}" \
+            --notes-file "$NOTES_FILE" \
+            "$LINKS_FILE"
+
+          rm -f "$NOTES_FILE"
+
+      - name: Upload to GitHub Releases
+        if: ${{ github.event.inputs.upload_destination == 'github releases' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ ! -d "output" ] || [ -z "$(ls -A output)" ]; then
+            echo "❌ No files to upload"
+            exit 1
+          fi
+
+          NOTES_FILE=$(mktemp)
+          ASSETS=()
+          SIZE_LIMIT=2147483648
+
+          for FILE in output/*; do
+            [ -f "$FILE" ] || continue
+            FILESIZE=$(stat -c%s "$FILE")
+            BASENAME=$(basename "$FILE")
+
+            if [ "$FILESIZE" -gt "$SIZE_LIMIT" ]; then
+              if bash upload_gofile.sh "$FILE"; then
+                GOFILE_URL=$(cat download_url.txt)
+                echo "${BASENAME}: ${GOFILE_URL}" >> "$NOTES_FILE"
+              else
+                echo "${BASENAME}: ❌ GoFile upload failed" >> "$NOTES_FILE"
+              fi
+            else
+              ASSETS+=("$FILE")
+            fi
+          done
+
+          gh release create "${{ steps.fwinfo.outputs.release_tag }}" \
+            --title "${{ steps.fwinfo.outputs.ap_code }} | ${{ steps.fwinfo.outputs.csc_code }}" \
+            --notes-file "$NOTES_FILE" \
+            "${ASSETS[@]}"
+
+          rm -f "$NOTES_FILE"
