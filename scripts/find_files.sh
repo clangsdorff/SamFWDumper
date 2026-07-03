@@ -37,7 +37,9 @@ chmod +x tools/android-tools/* tools/erofs-utils/* 2>/dev/null || true
 FS_PARTS="system system_ext product vendor vendor_dlkm system_dlkm odm odm_dlkm"
 
 echo ""; echo "[1/6] Downloading..."
-wget -q --no-check-certificate --content-disposition "$URL"
+wget --no-check-certificate --content-disposition \
+  --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" \
+  "$URL" 2>&1 | tail -20
 ZIP_FILE=$(ls -t *.zip 2>/dev/null | head -1)
 [ ! -f "$ZIP_FILE" ] && { echo "❌ Download failed"; exit 1; }
 FILESIZE=$(stat -c%s "$ZIP_FILE")
