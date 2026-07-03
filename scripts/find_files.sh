@@ -41,7 +41,12 @@ wget --no-check-certificate --content-disposition \
   --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" \
   "$URL" 2>&1 | tail -20
 ZIP_FILE=$(ls -t *.zip 2>/dev/null | head -1)
-[ ! -f "$ZIP_FILE" ] && { echo "❌ Download failed"; exit 1; }
+if [ ! -f "$ZIP_FILE" ]; then
+  DOWNLOADED=$(ls -t 2>/dev/null | grep -v -E '^(tools|scripts|output|extracted|\.github|ap_code\.txt|csc_code\.txt)$' | head -1)
+  echo "❌ Download failed: expected a firmware .zip, but got '${DOWNLOADED:-nothing}'."
+  echo "   'url' must be the SamFW Direct Download Link for the full firmware package, not a link to a single extracted file."
+  exit 1
+fi
 FILESIZE=$(stat -c%s "$ZIP_FILE")
 [ "$FILESIZE" -eq 0 ] && { echo "❌ Empty file"; exit 1; }
 echo "✅ Downloaded: $(numfmt --to=iec $FILESIZE)"
